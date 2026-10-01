@@ -10,9 +10,10 @@ knitr::opts_chunk$set(echo = TRUE)
 ```
 ```{r}
 library(tidyverse)
+library(readxl)
 ```
-## Problem 1
 
+## Problem 1
 ```{r}
 subway_df = read_csv(
   "data/NYC_Transit_Subway_Entrance_And_Exit_Data.csv",
@@ -97,3 +98,241 @@ subway_long |>
   nrow()
 ```
 After reshaping the route variables into a long format, 60 distinct stations serve the A train, and 17 of those stations are ADA compliant.
+
+## Problem 2
+```{r}
+trash_file = "data/202509 Trash Wheel Collection Data.xlsx"
+
+# Mr. Trash Wheel
+mr_trash = read_excel(
+  trash_file,
+  sheet = "Mr. Trash Wheel",
+  range = "A2:N709"
+) |>
+  rename_with(
+    ~ .x |>
+      str_to_lower() |>
+      str_replace_all("[^a-z0-9]+", "_") |>
+      str_remove("_$")
+  ) |>
+  mutate(
+  month = str_trim(month),
+  year = as.integer(year),
+  dumpster = as.integer(dumpster),
+  sports_balls = as.integer(round(sports_balls)),
+  trash_wheel = "Mr. Trash Wheel"
+)
+
+
+# Professor Trash Wheel
+professor_trash = read_excel(
+  trash_file,
+  sheet = "Professor Trash Wheel",
+  range = "A2:M134"
+) |>
+  rename_with(
+    ~ .x |>
+      str_to_lower() |>
+      str_replace_all("[^a-z0-9]+", "_") |>
+      str_remove("_$")
+  ) |>
+  mutate(
+      month = str_trim(month),
+      year = as.integer(year),
+      dumpster = as.integer(dumpster),
+      trash_wheel = "Professor Trash Wheel"
+    )
+
+
+# Gwynnda / Gwynns Falls Trash Wheel
+gwynnda_trash = read_excel(
+  trash_file,
+  sheet = "Gwynns Falls Trash Wheel",
+  range = "A2:L351"
+) |>
+  rename_with(
+    ~ .x |>
+      str_to_lower() |>
+      str_replace_all("[^a-z0-9]+", "_") |>
+      str_remove("_$")
+  ) |>
+  mutate(
+    month = str_trim(month),
+    year = as.integer(year),
+    dumpster = as.integer(dumpster),
+    trash_wheel = "Gwynnda"
+  )
+
+trash_wheel_df = bind_rows(
+  mr_trash,
+  professor_trash,
+  gwynnda_trash
+)
+
+glimpse(trash_wheel_df)
+dim(trash_wheel_df)
+```
+
+```{r}
+# Total weight collected by Professor Trash Wheel
+professor_total_weight = trash_wheel_df |>
+  filter(trash_wheel == "Professor Trash Wheel") |>
+  summarize(
+    total_weight = sum(weight_tons, na.rm = TRUE)
+  )
+
+professor_total_weight
+
+
+# Cigarette butts collected by Gwynnda in June 2022
+gwynnda_june_2022 = trash_wheel_df |>
+  filter(
+    trash_wheel == "Gwynnda",
+    year == 2022,
+    month == "June"
+  ) |>
+  summarize(
+    total_cigarette_butts = sum(cigarette_butts, na.rm = TRUE)
+  )
+
+gwynnda_june_2022
+```
+The combined Trash Wheel dataset has 1,188 observations and 15 variables. The variables include dumpster number, month, year, collection date, trash weight and volume, several types of litter, and which Trash Wheel collected the trash. I cleaned each sheet separately, removed rows and columns that were not part of the actual data, cleaned the variable names, and rounded the sports ball counts for Mr. Trash Wheel to integers before combining the three datasets. Professor Trash Wheel collected 282.26 tons of trash in total, and Gwynnda collected 18,120 cigarette butts in June 2022.
+
+## Problem 3
+```{r}
+mci_baseline = read_csv(
+  "data/MCI_baseline.csv",
+  skip = 1,
+  show_col_types = FALSE
+)
+
+mci_amyloid = read_csv(
+  "data/mci_amyloid.csv",
+  skip = 1,
+  show_col_types = FALSE
+)
+
+glimpse(mci_baseline)
+names(mci_baseline)
+
+glimpse(mci_amyloid)
+names(mci_amyloid)
+```
+
+```{r}
+baseline_clean = mci_baseline |>
+  rename(
+    study_id = ID,
+    baseline_age = `Current Age`,
+    sex = Sex,
+    education = Education,
+    apoe4 = apoe4,
+    age_at_onset = `Age at onset`
+  ) |>
+  mutate(
+    age_at_onset = as.numeric(na_if(age_at_onset, ".")),
+    sex = factor(
+      sex,
+      levels = c(0, 1),
+      labels = c("Female", "Male")
+    ),
+    apoe4 = factor(
+      apoe4,
+      levels = c(0, 1),
+      labels = c("Non-carrier", "Carrier")
+    )
+  ) |>
+# Keep only participants without MCI at baseline
+  filter(
+    is.na(age_at_onset) | age_at_onset > baseline_age
+  )
+
+glimpse(baseline_clean)
+dim(baseline_clean)
+
+# Number of participants recruited
+nrow(baseline_clean)
+
+# Number who developed MCI during follow-up
+baseline_clean |>
+  summarize(
+    developed_mci = sum(!is.na(age_at_onset))
+  )
+
+# Average baseline age
+baseline_clean |>
+  summarize(
+    average_baseline_age = mean(baseline_age, na.rm = TRUE)
+  )
+
+# Proportion of women who are APOE4 carriers
+baseline_clean |>
+  filter(sex == "Female") |>
+  summarize(
+    proportion_apoe4_carrier = mean(apoe4 == "Carrier", na.rm = TRUE)
+  )
+
+amyloid_clean = mci_amyloid |>
+  rename(
+    study_id = `Study ID`
+  ) |>
+  mutate(
+    across(
+      -study_id,
+      ~ as.numeric(na_if(.x, "."))
+    )
+  ) |>
+  pivot_longer(
+    cols = -study_id,
+    names_to = "visit",
+    values_to = "amyloid_42_40"
+  ) |>
+  mutate(
+    time = case_when(
+      visit == "Baseline" ~ 0,
+      TRUE ~ parse_number(visit)
+    )
+  ) |>
+  select(
+    study_id,
+    time,
+    amyloid_42_40
+  ) |>
+  arrange(study_id, time)
+
+glimpse(amyloid_clean)
+dim(amyloid_clean)
+# Participants only in baseline dataset
+baseline_only = baseline_clean |>
+  anti_join(
+    amyloid_clean |> distinct(study_id),
+    by = "study_id"
+  )
+
+baseline_only
+
+
+# Participants only in amyloid dataset
+amyloid_only = amyloid_clean |>
+  distinct(study_id) |>
+  anti_join(
+    baseline_clean |> distinct(study_id),
+    by = "study_id"
+  )
+
+amyloid_only
+mci_combined = amyloid_clean |>
+  inner_join(
+    baseline_clean,
+    by = "study_id"
+  )
+
+glimpse(mci_combined)
+dim(mci_combined)
+write_csv(
+  mci_combined,
+  "data/mci_combined.csv"
+)
+```
+After cleaning the baseline data and removing participants who already had MCI at baseline, 479 participants remained. Of these, 93 developed MCI during follow-up. The average baseline age was 65.03 years, and 30% of women were APOE4 carriers. The amyloid data were reshaped into long format, with one row for each participant and measurement time. There were 8 participants found only in the baseline dataset and 16 found only in the amyloid dataset. After keeping participants present in both datasets, the final dataset contained 471 participants and 2,355 observations.
