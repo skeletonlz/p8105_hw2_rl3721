@@ -4,11 +4,9 @@ author: "Rachel Liu"
 date: "2026-10-01"
 output: github_document
 ---
-
 ```{r setup, include=FALSE}
 knitr::opts_chunk$set(echo = TRUE)
-```
-```{r}
+
 library(tidyverse)
 library(readxl)
 ```
@@ -34,11 +32,7 @@ subway_df = read_csv(
     ~ str_replace_all(str_to_lower(.x), " ", "_")
   ) |>
   mutate(
-    entry = case_match(
-      entry,
-      "YES" ~ TRUE,
-      "NO" ~ FALSE
-    ),
+    entry = entry == "YES",
     across(route1:route11, as.character)
   )
 
@@ -48,19 +42,15 @@ dim(subway_df)
 The cleaned subway dataset contains 1,868 observations and 19 variables. It includes subway line and station name, station latitude and longitude, routes served, entrance type, entry status, vending information, and ADA compliance. I retained the variables needed for the analysis, cleaned the variable names, converted entry from YES/NO to a logical variable, and converted the route variables to character type. The data are not fully tidy because the routes served are stored across multiple columns (route1 through route11) instead of in separate rows.
 
 ```{r}
-# Number of distinct stations
 subway_df |>
   distinct(line, station_name) |>
   nrow()
 
-
-# Number of ADA-compliant stations
 subway_df |>
   filter(ada == TRUE) |>
   distinct(line, station_name) |>
   nrow()
   
-# Proportion of entrances/exits without vending that allow entry
 subway_df |>
   filter(vending == "NO") |>
   summarize(
@@ -85,13 +75,11 @@ subway_long = subway_df |>
 
 glimpse(subway_long)
 
-# Distinct stations serving the A train
 subway_long |>
   filter(route_name == "A") |>
   distinct(line, station_name) |>
   nrow()
 
-# ADA-compliant stations serving the A train
 subway_long |>
   filter(route_name == "A", ada == TRUE) |>
   distinct(line, station_name) |>
@@ -143,8 +131,7 @@ professor_trash = read_excel(
       trash_wheel = "Professor Trash Wheel"
     )
 
-
-# Gwynnda / Gwynns Falls Trash Wheel
+# Gwynnda Falls Trash Wheel
 gwynnda_trash = read_excel(
   trash_file,
   sheet = "Gwynns Falls Trash Wheel",
@@ -174,7 +161,6 @@ dim(trash_wheel_df)
 ```
 
 ```{r}
-# Total weight collected by Professor Trash Wheel
 professor_total_weight = trash_wheel_df |>
   filter(trash_wheel == "Professor Trash Wheel") |>
   summarize(
@@ -183,8 +169,6 @@ professor_total_weight = trash_wheel_df |>
 
 professor_total_weight
 
-
-# Cigarette butts collected by Gwynnda in June 2022
 gwynnda_june_2022 = trash_wheel_df |>
   filter(
     trash_wheel == "Gwynnda",
@@ -200,24 +184,21 @@ gwynnda_june_2022
 The combined Trash Wheel dataset has 1,188 observations and 15 variables. The variables include dumpster number, month, year, collection date, trash weight and volume, several types of litter, and which Trash Wheel collected the trash. I cleaned each sheet separately, removed rows and columns that were not part of the actual data, cleaned the variable names, and rounded the sports ball counts for Mr. Trash Wheel to integers before combining the three datasets. Professor Trash Wheel collected 282.26 tons of trash in total, and Gwynnda collected 18,120 cigarette butts in June 2022.
 
 ## Problem 3
+
 ```{r}
 mci_baseline = read_csv(
   "data/MCI_baseline.csv",
   skip = 1,
+  na = c("", ".", "NA"),
   show_col_types = FALSE
 )
 
 mci_amyloid = read_csv(
   "data/mci_amyloid.csv",
   skip = 1,
+  na = c("", ".", "NA"),
   show_col_types = FALSE
 )
-
-glimpse(mci_baseline)
-names(mci_baseline)
-
-glimpse(mci_amyloid)
-names(mci_amyloid)
 ```
 
 ```{r}
@@ -231,7 +212,6 @@ baseline_clean = mci_baseline |>
     age_at_onset = `Age at onset`
   ) |>
   mutate(
-    age_at_onset = as.numeric(na_if(age_at_onset, ".")),
     sex = factor(
       sex,
       levels = c(0, 1),
@@ -243,45 +223,43 @@ baseline_clean = mci_baseline |>
       labels = c("Non-carrier", "Carrier")
     )
   ) |>
-# Keep only participants without MCI at baseline
   filter(
     is.na(age_at_onset) | age_at_onset > baseline_age
   )
 
 glimpse(baseline_clean)
 dim(baseline_clean)
+```
 
-# Number of participants recruited
+```{r}
 nrow(baseline_clean)
 
-# Number who developed MCI during follow-up
 baseline_clean |>
   summarize(
     developed_mci = sum(!is.na(age_at_onset))
   )
 
-# Average baseline age
 baseline_clean |>
   summarize(
     average_baseline_age = mean(baseline_age, na.rm = TRUE)
   )
 
-# Proportion of women who are APOE4 carriers
 baseline_clean |>
   filter(sex == "Female") |>
   summarize(
-    proportion_apoe4_carrier = mean(apoe4 == "Carrier", na.rm = TRUE)
+    proportion_apoe4_carrier = mean(
+      apoe4 == "Carrier",
+      na.rm = TRUE
+    )
   )
+```
 
+The cleaned baseline dataset contains 479 participants. Of these, 93 developed MCI during follow-up. The average baseline age was 65.03 years, and 30% of the women were APOE4 carriers. Sex and APOE4 carrier status were converted from numeric codes to categorical variables, and participants who already had MCI at baseline were removed.
+
+```{r}
 amyloid_clean = mci_amyloid |>
   rename(
     study_id = `Study ID`
-  ) |>
-  mutate(
-    across(
-      -study_id,
-      ~ as.numeric(na_if(.x, "."))
-    )
   ) |>
   pivot_longer(
     cols = -study_id,
@@ -289,9 +267,8 @@ amyloid_clean = mci_amyloid |>
     values_to = "amyloid_42_40"
   ) |>
   mutate(
-    time = case_when(
-      visit == "Baseline" ~ 0,
-      TRUE ~ parse_number(visit)
+    time = parse_number(
+      str_replace(visit, "Baseline", "0")
     )
   ) |>
   select(
@@ -303,25 +280,36 @@ amyloid_clean = mci_amyloid |>
 
 glimpse(amyloid_clean)
 dim(amyloid_clean)
-# Participants only in baseline dataset
+```
+
+The amyloid data were reshaped from wide to long format so that each row represents one participant at one measurement time. The cleaned amyloid dataset contains 2,435 observations and three variables: participant ID, time since baseline, and the amyloid 42/40 ratio.
+
+```{r}
 baseline_only = baseline_clean |>
   anti_join(
-    amyloid_clean |> distinct(study_id),
+    amyloid_clean |>
+      distinct(study_id),
     by = "study_id"
   )
 
 baseline_only
+```
 
-
-# Participants only in amyloid dataset
+```{r}
 amyloid_only = amyloid_clean |>
   distinct(study_id) |>
   anti_join(
-    baseline_clean |> distinct(study_id),
+    baseline_clean |>
+      distinct(study_id),
     by = "study_id"
   )
 
 amyloid_only
+```
+
+There are 8 participants who appear only in the baseline dataset and 16 participants who appear only in the amyloid dataset.
+
+```{r}
 mci_combined = amyloid_clean |>
   inner_join(
     baseline_clean,
@@ -330,9 +318,15 @@ mci_combined = amyloid_clean |>
 
 glimpse(mci_combined)
 dim(mci_combined)
+
+n_distinct(mci_combined$study_id)
+```
+
+```{r}
 write_csv(
   mci_combined,
   "data/mci_combined.csv"
 )
 ```
-After cleaning the baseline data and removing participants who already had MCI at baseline, 479 participants remained. Of these, 93 developed MCI during follow-up. The average baseline age was 65.03 years, and 30% of women were APOE4 carriers. The amyloid data were reshaped into long format, with one row for each participant and measurement time. There were 8 participants found only in the baseline dataset and 16 found only in the amyloid dataset. After keeping participants present in both datasets, the final dataset contained 471 participants and 2,355 observations.
+
+After keeping only participants who appear in both datasets, the final dataset contains 471 participants and 2,355 longitudinal observations. It includes the amyloid measurements and measurement time together with baseline age, sex, education, APOE4 carrier status, and age at MCI onset.
